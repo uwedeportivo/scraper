@@ -1,0 +1,32 @@
+load("@gazelle//:def.bzl", "gazelle")
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+# gazelle:prefix scraper
+gazelle(name = "gazelle")
+
+go_library(
+    name = "scraper_lib",
+    srcs = [
+        "main.go",
+        "scraper.go",
+        "ui.go",
+    ],
+    importpath = "scraper",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_charmbracelet_bubbles//spinner",
+        "@com_github_charmbracelet_bubbletea//:bubbletea",
+        "@com_github_charmbracelet_lipgloss//:lipgloss",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_spf13_cobra//:cobra",
+        "@com_github_yhat_scrape//:scrape",
+        "@org_golang_x_net//html",
+        "@org_golang_x_net//html/atom",
+    ],
+)
+
+go_binary(
+    name = "scraper",
+    embed = [":scraper_lib"],
+    visibility = ["//visibility:public"],
+)
