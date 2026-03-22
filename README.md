@@ -33,9 +33,15 @@ scraper --dryrun https://example.com
 | `--recurse` | Follow anchor links within the same domain       | `false` |
 | `--dryrun`  | Print links without downloading                  | `false` |
 
+## Installation
+
+```bash
+go install github.com/uwedeportivo/scraper@latest
+```
+
 ## Build
 
-### With Bazel (recommended)
+### With Bazel (from source)
 
 ```bash
 bazel build //:scraper

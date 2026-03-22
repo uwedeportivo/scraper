@@ -1,4 +1,4 @@
-module scraper
+module github.com/uwedeportivo/scraper
 
 go 1.26.1
 
