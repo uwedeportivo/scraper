@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,26 @@ const (
 	maxTries   = 3
 	DEBUG      = false
 )
+
+var (
+	redfinImageRe = regexp.MustCompile(`https://ssl\.cdn-redfin\.com/photo/\d+/bigphoto/\d+/[A-Za-z0-9_.]+\.jpg`)
+	httpClient    = &http.Client{Timeout: 30 * time.Second}
+)
+
+func httpGet(rawURL string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	return httpClient.Do(req)
+}
+
+func isRedfinListing(u *url.URL) bool {
+	return u.Host == "www.redfin.com" && strings.Contains(u.Path, "/home/")
+}
 
 type Link struct {
 	url       *url.URL
@@ -85,7 +106,6 @@ func (sch *scheduler) run() {
 				heap.Push(&sch.lq, lk)
 			} else {
 				sch.prog.Send(msgError{url: lk.url.String()})
-				numInflight--
 			}
 		case lk := <-sch.sc:
 			if _, seen := sch.seen[lk.url.String()]; !seen {
@@ -141,7 +161,7 @@ func (w *worker) down(lk *Link) error {
 	}
 	defer out.Close()
 
-	resp, err := http.Get(lk.url.String())
+	resp, err := httpGet(lk.url.String())
 	if err != nil {
 		return err
 	}
@@ -159,20 +179,21 @@ func (w *worker) extractLink(n *html.Node) (*Link, error) {
 	var urlStr string
 	isLeaf := false
 
-	if n.DataAtom == atom.A {
+	switch n.DataAtom {
+	case atom.A:
 		if !recurse {
 			return nil, nil
 		}
 		urlStr = scrape.Attr(n, "href")
-	} else if n.DataAtom == atom.Img {
+	case atom.Img:
 		urlStr = scrape.Attr(n, "src")
 		if urlStr == "" {
 			urlStr = scrape.Attr(n, "data-src")
 		}
 		isLeaf = true
-	} else if n.DataAtom == atom.Frame {
+	case atom.Frame:
 		urlStr = scrape.Attr(n, "src")
-	} else {
+	default:
 		return nil, nil
 	}
 	if strings.HasPrefix(urlStr, "/") {
@@ -198,8 +219,43 @@ func (w *worker) extractLink(n *html.Node) (*Link, error) {
 	return &Link{url: u, isLeaf: isLeaf}, nil
 }
 
+func (w *worker) scrapeRedfin(lk *Link) error {
+	resp, err := httpGet(lk.url.String())
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	matches := redfinImageRe.FindAllString(string(body), -1)
+	seen := make(map[string]struct{})
+	found := 0
+	for _, m := range matches {
+		if _, ok := seen[m]; ok {
+			continue
+		}
+		seen[m] = struct{}{}
+		u, err := url.Parse(m)
+		if err != nil {
+			continue
+		}
+		w.sc <- &Link{url: u, isLeaf: true}
+		found++
+	}
+	w.prog.Send(msgPageScraped{url: lk.url.String(), links: found})
+	return nil
+}
+
 func (w *worker) scrape(lk *Link) error {
-	resp, err := http.Get(lk.url.String())
+	if isRedfinListing(lk.url) {
+		return w.scrapeRedfin(lk)
+	}
+
+	resp, err := httpGet(lk.url.String())
 	if err != nil {
 		return err
 	}
@@ -261,7 +317,7 @@ func run(mainUrl *url.URL, prog *tea.Program) {
 
 	var wg sync.WaitGroup
 
-	wc := make(chan *Link)
+	wc := make(chan *Link, numWorkers)
 	ec := make(chan *Link)
 	sc := make(chan *Link)
 	pc := make(chan *Link)
