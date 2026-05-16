@@ -12,9 +12,10 @@ import (
 )
 
 var (
-	recurse bool
-	dryrun  bool
-	output  string
+	recurse   bool
+	dryrun    bool
+	output    string
+	inputFile string
 )
 
 var diagnoseCmd = &cobra.Command{
@@ -93,6 +94,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&recurse, "recurse", false, "recurse into linked pages with same domain")
 	rootCmd.Flags().BoolVar(&dryrun, "dryrun", false, "dry run")
 	rootCmd.Flags().StringVar(&output, "output", "", "output directory (created if it doesn't exist)")
+	rootCmd.Flags().StringVar(&inputFile, "input-file", "", "specify a file with the contents of the first url to bypass captcha")
 	rootCmd.AddCommand(diagnoseCmd)
 }
 

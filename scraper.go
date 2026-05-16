@@ -220,15 +220,25 @@ func (w *worker) extractLink(n *html.Node) (*Link, error) {
 }
 
 func (w *worker) scrapeRedfin(lk *Link) error {
-	resp, err := httpGet(lk.url.String())
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+	var body []byte
+	var err error
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
+	if inputFile != "" && lk.url.String() == w.mainUrl.String() {
+		body, err = os.ReadFile(inputFile)
+		if err != nil {
+			return err
+		}
+	} else {
+		resp, err := httpGet(lk.url.String())
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		body, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
 	}
 
 	matches := redfinImageRe.FindAllString(string(body), -1)
